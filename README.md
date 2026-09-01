@@ -8,7 +8,7 @@ The project is intentionally being built in small, testable milestones. Dependen
 
 **Milestone 1 — Environment assessment and repository foundation**
 
-The Codex workspace is currently attached to an Apple Silicon Mac, not the target Windows 11 / RTX 3060 Ti development PC. The target machine therefore still needs to be assessed directly. The repository includes a read-only PowerShell script for that purpose.
+The target Windows 11 / RTX 3060 Ti development PC has been assessed directly. The GPU and NVIDIA driver are working on Windows, while WSL2, Ubuntu, Windows/WSL Python, Docker, and WSL GPU access are not yet available or verifiable. See [`docs/milestone-1-environment.md`](docs/milestone-1-environment.md) for the evidence, explanations, and deliberately deferred setup decisions.
 
 ## Run the Windows/WSL assessment
 

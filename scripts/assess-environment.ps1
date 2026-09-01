@@ -64,12 +64,27 @@ if ($null -eq $nvidiaSmi) {
 }
 
 Write-Section "WSL status and installed distributions"
-Invoke-IfAvailable -Command "wsl.exe" -Arguments @("--status")
-Invoke-IfAvailable -Command "wsl.exe" -Arguments @("--version")
-Invoke-IfAvailable -Command "wsl.exe" -Arguments @("--list", "--verbose")
+$wslCommand = Get-Command wsl.exe -ErrorAction SilentlyContinue
+$wslReady = $false
+if ($null -eq $wslCommand) {
+    Write-Host "wsl.exe: not found"
+} else {
+    Write-Host "wsl.exe path: $($wslCommand.Source)"
+    $wslStatus = @(& wsl.exe --status 2>&1)
+    $wslStatusExitCode = $LASTEXITCODE
+    $wslStatus | ForEach-Object { Write-Host $_ }
+
+    if ($wslStatusExitCode -eq 0) {
+        $wslReady = $true
+        & wsl.exe --version 2>&1
+        & wsl.exe --list --verbose 2>&1
+    } else {
+        Write-Host "WSL is not ready; skipping commands that could show an interactive installation prompt."
+    }
+}
 
 Write-Section "GPU and tooling inside each WSL distribution"
-if (Get-Command wsl.exe -ErrorAction SilentlyContinue) {
+if ($wslReady) {
     $distributions = @(& wsl.exe --list --quiet 2>$null) |
         ForEach-Object { ($_ -replace "`0", "").Trim() } |
         Where-Object { $_ }
@@ -104,6 +119,8 @@ docker --version 2>&1 || true
 nvcc --version 2>&1 || true
 '@
     }
+} else {
+    Write-Host "Skipped because WSL is not installed or configured."
 }
 
 Write-Section "Windows Python and pip"
