@@ -1,0 +1,5 @@
+# Install the CUDA-enabled PyTorch wheel first; see the Milestone 2 guide.
+numpy==2.5.2
+safetensors==0.8.0
+torch==2.13.0
+transformers==5.16.1

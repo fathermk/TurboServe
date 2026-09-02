@@ -6,9 +6,9 @@ The project is intentionally being built in small, testable milestones. Dependen
 
 ## Current status
 
-**Milestone 1 — Environment assessment and repository foundation**
+**Milestone 2 — Reproducible PyTorch inference baseline (complete)**
 
-The target Windows 11 / RTX 3060 Ti development PC has been assessed directly. The GPU and NVIDIA driver are working on Windows, while WSL2, Ubuntu, Windows/WSL Python, Docker, and WSL GPU access are not yet available or verifiable. See [`docs/milestone-1-environment.md`](docs/milestone-1-environment.md) for the evidence, explanations, and deliberately deferred setup decisions.
+WSL2, Ubuntu 24.04, Python 3.12, PyTorch 2.13 with CUDA 13.0, and RTX 3060 Ti GPU access are verified. The deterministic TinyLlama PyTorch baseline generates text and records basic latency, throughput, and VRAM evidence. See [`docs/milestone-2-pytorch-baseline.md`](docs/milestone-2-pytorch-baseline.md).
 
 ## Run the Windows/WSL assessment
 
@@ -31,4 +31,5 @@ Review the output before sharing it publicly. The script avoids intentionally co
 4. Triton Inference Server deployment
 5. Benchmarking, concurrency testing, and results analysis
 
-Only Milestone 1 is in scope today.
+Milestone 2 is complete. TensorRT-LLM, Triton, concurrency testing, and
+monitoring remain later milestones and have not been started.
