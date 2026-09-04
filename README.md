@@ -6,9 +6,13 @@ The project is intentionally being built in small, testable milestones. Dependen
 
 ## Current status
 
-**Milestone 2 — Reproducible PyTorch inference baseline (complete)**
+**Milestone 3 — TensorRT-LLM comparison path (complete)**
 
-WSL2, Ubuntu 24.04, Python 3.12, PyTorch 2.13 with CUDA 13.0, and RTX 3060 Ti GPU access are verified. The deterministic TinyLlama PyTorch baseline generates text and records basic latency, throughput, and VRAM evidence. See [`docs/milestone-2-pytorch-baseline.md`](docs/milestone-2-pytorch-baseline.md).
+The ordinary PyTorch baseline and an isolated NVIDIA TensorRT-LLM 1.2.1 path
+both run TinyLlama on the RTX 3060 Ti. The first TensorRT-LLM smoke test produced
+the same text at about 2.8 times the baseline output-token rate. This is an
+initial result; controlled benchmarking remains Milestone 5. See
+[`docs/milestone-3-tensorrt-llm.md`](docs/milestone-3-tensorrt-llm.md).
 
 ## Run the Windows/WSL assessment
 
@@ -31,5 +35,5 @@ Review the output before sharing it publicly. The script avoids intentionally co
 4. Triton Inference Server deployment
 5. Benchmarking, concurrency testing, and results analysis
 
-Milestone 2 is complete. TensorRT-LLM, Triton, concurrency testing, and
-monitoring remain later milestones and have not been started.
+Milestone 3 is complete. Triton deployment is next; formal benchmarking,
+concurrency testing, and monitoring remain later milestones.

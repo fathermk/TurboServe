@@ -1,0 +1,6 @@
+--extra-index-url https://download.pytorch.org/whl/cu130
+
+# Keep this stack in ~/.venvs/turboserve-trtllm. These versions intentionally
+# differ from the ordinary PyTorch baseline in requirements.txt.
+torch==2.9.1+cu130
+tensorrt_llm==1.2.1
