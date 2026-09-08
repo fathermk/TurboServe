@@ -6,13 +6,13 @@ The project is intentionally being built in small, testable milestones. Dependen
 
 ## Current status
 
-**Milestone 3 — TensorRT-LLM comparison path (complete)**
+**Milestone 4 — Triton serving (functional test passed)**
 
 The ordinary PyTorch baseline and an isolated NVIDIA TensorRT-LLM 1.2.1 path
-both run TinyLlama on the RTX 3060 Ti. The first TensorRT-LLM smoke test produced
-the same text at about 2.8 times the baseline output-token rate. This is an
-initial result; controlled benchmarking remains Milestone 5. See
-[`docs/milestone-3-tensorrt-llm.md`](docs/milestone-3-tensorrt-llm.md).
+both run TinyLlama on the RTX 3060 Ti. On September 8, 2026, the Triton
+deployment reached READY and returned generated text through its HTTP API.
+See [`docs/milestone-4-triton-serving.md`](docs/milestone-4-triton-serving.md)
+for the verified result, launch commands, and remaining limitations.
 
 ## Run the Windows/WSL assessment
 
@@ -35,5 +35,6 @@ Review the output before sharing it publicly. The script avoids intentionally co
 4. Triton Inference Server deployment
 5. Benchmarking, concurrency testing, and results analysis
 
-Milestone 3 is complete. Triton deployment is next; formal benchmarking,
-concurrency testing, and monitoring remain later milestones.
+Triton serving is verified. Controlled benchmarking is next. A future
+performance investigation assistant will use saved measurements and comparison
+tools; it has not been implemented yet.
