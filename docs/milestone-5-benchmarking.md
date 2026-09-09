@@ -58,6 +58,29 @@ refusal as a failed run before the successful measurement above.
 
 ## Remaining work
 
+### Run metadata (schema version 3)
+
+Each run now records client Python, kernel and architecture, benchmark file
+SHA-256, client Git commit and working-tree status, and local GPU name,
+driver and total memory. The client GPU inventory is not proof of server
+GPU assignment. No serial numbers or environment variables are collected.
+Read-only subprocess diagnostics have a ten-second timeout and record
+unavailable tools explicitly. All metadata collection occurs before warmup,
+outside the request timers.
+
+The running server's `/v2/models/tensorrt_llm/config` response is saved with
+a SHA-256 fingerprint of sorted-key JSON. Its configuration is distinct
+from TensorRT-LLM's model YAML: model-weight revision, precision and KV-cache
+settings remain null until verified through another source. Matching
+fingerprints alone are therefore insufficient to establish comparable runs.
+
+Live verification: `triton-20260909T034034.305216Z.json` completed five requests
+and captured configuration plus RTX 3060 Ti / driver 616.56 / 8192 MiB.
+Median server TTFT was 20.83 ms and HTTP completion latency approximately
+263 ms. Eight offline tests passed. The benchmark source was modified during
+this run; its file fingerprint and working-tree status record that fact.
+Git status may differ between Windows and WSL because of platform settings.
+
 ### Verified server timing extension
 
 Run `triton-20260909T033645.980965Z.json` (September 8 local Eastern time)

@@ -3,8 +3,11 @@
 import argparse
 from datetime import datetime, timezone
 import json
+import hashlib
+import platform
 from pathlib import Path
 import statistics
+import subprocess
 import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -37,6 +40,51 @@ def server_ttft(response):
     return (first - arrival) / 1_000_000_000
 
 
+def command_snapshot(args, cwd=None):
+    """Bounded, read-only diagnostics; missing tools do not invalidate timings."""
+    try:
+        result = subprocess.run(args, cwd=cwd, capture_output=True, text=True,
+                                timeout=10, check=True)
+        return {'status': 'available', 'value': result.stdout.strip()}
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {'status': 'unavailable', 'reason': str(exc)}
+
+
+def collect_environment():
+    script = Path(__file__).resolve()
+    return {
+        'collected_at_utc': datetime.now(timezone.utc).isoformat(),
+        'client_python': platform.python_version(),
+        'client_system': platform.system(),
+        'client_kernel': platform.release(),
+        'client_architecture': platform.machine(),
+        'benchmark_sha256': hashlib.sha256(script.read_bytes()).hexdigest(),
+        'client_git_commit': command_snapshot(['git', 'rev-parse', 'HEAD'], script.parents[1]),
+        'client_git_status': command_snapshot(['git', 'status', '--porcelain'], script.parents[1]),
+        'local_gpu_inventory': command_snapshot([
+            'nvidia-smi', '--query-gpu=name,driver_version,memory.total',
+            '--format=csv,noheader,nounits']),
+        'gpu_inventory_columns': ['name', 'driver_version', 'total_memory_MiB'],
+        'gpu_scope': 'Local WSL inventory, not proof of server GPU assignment',
+        'server_model_weight_revision': None,
+        'server_precision': None,
+        'server_kv_cache_settings': None,
+        'unknown_reason': 'Not verified by Triton public model configuration',
+    }
+
+
+def collect_model_config():
+    try:
+        _, config = request('/v2/models/tensorrt_llm/config', timeout=10)
+        if not isinstance(config, dict) or not config.get('name'):
+            raise ValueError('Missing model configuration name')
+        return {'status': 'available', 'source': 'Triton HTTP model configuration',
+                'value': config,
+                'sha256': hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()}
+    except (HTTPError, URLError, OSError, ValueError) as exc:
+        return {'status': 'unavailable', 'reason': str(exc)}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--requests', type=int, default=5)
@@ -59,7 +107,7 @@ def main():
                'sampling_param_seed': 0,
                'sampling_param_return_perf_metrics': True}
     record = {
-        'schema_version': 2, 'started_at_utc': stamp.isoformat(),
+        'schema_version': 3, 'started_at_utc': stamp.isoformat(),
         'status': 'incomplete', 'endpoint': 'http://127.0.0.1:8000',
         'workload': 'sequential_repeated_prompt', 'concurrency': 1,
         'request_payload': payload, 'warmup_count': args.warmups,
@@ -72,8 +120,11 @@ def main():
                         'Not comparable to standalone generation-only timings'],
     }
     try:
+        record['environment'] = collect_environment()
         request('/v2/models/tensorrt_llm/ready', timeout=10)
         _, record['server_metadata'] = request('/v2', timeout=10)
+        record['model_configuration'] = collect_model_config()
+        print('Run metadata captured (outside request timers)')
         for index in range(args.warmups + args.requests):
             elapsed, response = request('/v2/models/tensorrt_llm/generate', payload)
             if not isinstance(response, dict) or not response.get('text_output'):

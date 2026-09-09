@@ -28,6 +28,8 @@ class BenchmarkTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             fake_script = str(Path(directory) / 'scripts' / 'benchmark_triton.py')
             with patch.object(benchmark, '__file__', fake_script), \
+                 patch.object(benchmark, 'collect_environment', return_value={'test': True}), \
+                 patch.object(benchmark, 'collect_model_config', return_value={'status': 'unavailable'}), \
                  patch('sys.argv', ['benchmark', '--requests', '2']), \
                  patch.object(benchmark, 'request', side_effect=replies), \
                  contextlib.redirect_stdout(io.StringIO()):
@@ -58,6 +60,21 @@ class BenchmarkTests(unittest.TestCase):
         status, result = self.run_case([(0, None), (0, {}), (1, {'error': 'bad'})])
         self.assertEqual(status, 1)
         self.assertIn('text_output', result['error'])
+
+    def test_missing_diagnostic_tool(self):
+        with patch.object(benchmark.subprocess, 'run', side_effect=FileNotFoundError('missing')):
+            self.assertEqual(benchmark.command_snapshot(['missing'])['status'], 'unavailable')
+
+    def test_model_config_unavailable(self):
+        with patch.object(benchmark, 'request', side_effect=URLError('offline')):
+            self.assertEqual(benchmark.collect_model_config()['status'], 'unavailable')
+
+    def test_config_fingerprint_ignores_key_order(self):
+        with patch.object(benchmark, 'request', side_effect=[
+                (0, {'name': 'test', 'backend': 'python'}),
+                (0, {'backend': 'python', 'name': 'test'})]):
+            self.assertEqual(benchmark.collect_model_config()['sha256'],
+                             benchmark.collect_model_config()['sha256'])
 
 
 if __name__ == '__main__':
