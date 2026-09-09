@@ -20,10 +20,17 @@ It excludes server startup and includes HTTP handling, tokenization, generation,
 and response transfer. JSON parsing is outside the timer. Each request uses
 a fresh urllib request; this is a simple local client workload.
 
+The request also asks Triton for its performance fields. When the server
+returns valid arrival and first-token timestamps, the record derives server TTFT
+as `first_token_time_ns - arrival_time_ns`; otherwise TTFT is recorded as
+unavailable. This measures executor-side timing, not client-observed streaming
+TTFT. Schema version 2 uses `server_ttft_seconds` and records the number of
+valid timing samples. Scalar or single-element-array timestamps are accepted;
+missing, zero, or reversed timestamps are unavailable, not zero-latency samples.
 The report provides mean, median, minimum, and maximum. Five samples are only
 an initial measurement, not sufficient for reliable tail-latency claims.
 The output limit is not an actual token count. Do not calculate tokens/second
-by assuming the model always generates the limit. TTFT is not measured.
+by assuming the model always generates the limit. Client streaming TTFT is not measured.
 Repeated prompts can benefit from KV cache reuse, which is not disabled here.
 
 ## First verified run: September 8, 2026
@@ -51,11 +58,26 @@ refusal as a failed run before the successful measurement above.
 
 ## Remaining work
 
+### Verified server timing extension
+
+Run `triton-20260909T033645.980965Z.json` (September 8 local Eastern time)
+completed with five valid server timestamp pairs after one excluded warmup.
+Median executor-side TTFT was 19.89 ms; median full HTTP completion latency
+was approximately 226 ms. The timestamps come from the pinned NVIDIA
+template's executor timing metrics. This is not client-observed first-token
+latency, because the endpoint still returns a complete non-streaming response.
+All five offline tests passed, including scalar/array timestamp parsing and
+rejection of missing, zero, reversed, boolean, and non-integer timestamps.
+The request now enables performance metadata, so it also differs from the
+initial measurement's request settings. No regression or improvement claim
+is made between those two small runs.
+
 - Capture model revision, runtime configuration, and hardware metadata.
 - Align tokenization, prompts, warmup, decoding and memory measurements for
   cross-backend comparisons. Earlier standalone runs used chat templates;
   this workload currently sends raw text.
-- Add actual output-token accounting and a defined TTFT measurement.
+- Add actual output-token accounting and validate Triton’s returned timing
+  fields against a streamed response.
 - Add controlled concurrency tests and device utilization sampling.
 - Review results before publishing performance claims.
 

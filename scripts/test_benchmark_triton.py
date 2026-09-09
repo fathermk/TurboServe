@@ -13,6 +13,17 @@ import benchmark_triton as benchmark
 
 
 class BenchmarkTests(unittest.TestCase):
+    def test_server_ttft_formats(self):
+        for arrival, first in [(100, 200), ([100], [200]), ('100', '200')]:
+            self.assertAlmostEqual(benchmark.server_ttft(
+                {'arrival_time_ns': arrival, 'first_token_time_ns': first}), 1e-7)
+
+    def test_invalid_server_timestamps(self):
+        for arrival, first in [(None, 200), (0, 200), (200, 100),
+                               (True, 200), (1.5, 200), ([1, 2], 200)]:
+            self.assertIsNone(benchmark.server_ttft(
+                {'arrival_time_ns': arrival, 'first_token_time_ns': first}))
+
     def run_case(self, replies):
         with tempfile.TemporaryDirectory() as directory:
             fake_script = str(Path(directory) / 'scripts' / 'benchmark_triton.py')
