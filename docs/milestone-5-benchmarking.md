@@ -58,6 +58,27 @@ refusal as a failed run before the successful measurement above.
 
 ## Remaining work
 
+### Deterministic comparison tool
+
+Run `scripts/compare_runs.py FIRST.json SECOND.json` with Python 3.
+It reads saved records only, recalculates medians from individual samples,
+and reports the observed percentage change. It rejects failed/incomplete
+runs and invalid latency values. Required recorded settings are checked
+for differences and missing values; two missing values are not a match.
+Matching recorded settings does not establish statistical significance,
+causation, or independently verified server state.
+
+Four offline tests passed. Comparing `triton-20260909T033645.980965Z.json`
+against `triton-20260909T034034.305216Z.json` reported `incomplete_context`,
+a schema difference and seven missing comparison fields. The observed median
+increase was 16.42%, but the report makes no regression claim. This tool
+provides deterministic calculations for a future AI explanation workflow;
+it is not yet an agent or MCP server.
+
+Capturing the actual loaded model-weight revision, precision and KV-cache
+settings remains outstanding. The current NVIDIA model YAML relies on runtime
+defaults and does not establish those effective values by itself.
+
 ### Run metadata (schema version 3)
 
 Each run now records client Python, kernel and architecture, benchmark file
