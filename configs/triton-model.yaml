@@ -1,0 +1,12 @@
+# Revision verified in the local cache; loading this path avoids a mutable Hub tag.
+model: /root/.cache/huggingface/hub/models--TinyLlama--TinyLlama-1.1B-Chat-v1.0/snapshots/fe8a4ea1ffedaf415f4da2f062534de366a451e6
+backend: pytorch
+dtype: float16
+tensor_parallel_size: 1
+pipeline_parallel_size: 1
+kv_cache_config:
+  free_gpu_memory_fraction: 0.30
+  enable_block_reuse: false
+triton_config:
+  max_batch_size: 0
+  decoupled: false

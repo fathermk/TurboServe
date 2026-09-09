@@ -5,6 +5,13 @@ set -euo pipefail
 IMAGE='nvcr.io/nvidia/tritonserver@sha256:b097871d05da2e63178d1b91fd1199bc395f653ade4f05ab227c463ea7437007'
 SOURCE='/mnt/m/Projects/TensorRT-LLM-v1.2.1'
 CACHE='/home/eggcorn/.cache/huggingface'
+PROJECT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+CONFIG="$PROJECT/configs/triton-model.yaml"
+SNAPSHOT="$CACHE/hub/models--TinyLlama--TinyLlama-1.1B-Chat-v1.0/snapshots/fe8a4ea1ffedaf415f4da2f062534de366a451e6"
+if [[ ! -f "$CONFIG" || ! -f "$SNAPSHOT/config.json" || ! -f "$SNAPSHOT/model.safetensors" ]]; then
+  echo 'Missing project configuration or pinned cached model snapshot.' >&2
+  exit 1
+fi
 if [[ ! -f "$SOURCE/triton_backend/all_models/llmapi/tensorrt_llm/1/model.yaml" ]]; then
   echo "Missing NVIDIA model template in $SOURCE" >&2
   exit 1
@@ -23,6 +30,8 @@ exec sudo docker run --rm -it --name turboserve-triton \
   -p 127.0.0.1:8002:8002 \
   --mount "type=bind,source=$CACHE,target=/root/.cache/huggingface" \
   --mount "type=bind,source=$SOURCE,target=/workspace/TensorRT-LLM,readonly" \
+  --mount "type=bind,source=$CONFIG,target=/workspace/turboserve-model.yaml,readonly" \
+  -e LLM_CONFIG_PATH=/workspace/turboserve-model.yaml \
   "$IMAGE" bash -lc '
     python3 -m pip install --no-cache-dir openai==2.53.0 &&
     cd /workspace &&

@@ -58,6 +58,33 @@ refusal as a failed run before the successful measurement above.
 
 ## Remaining work
 
+### Explicit server configuration (restart and request verified)
+
+`configs/triton-model.yaml` now selects cached snapshot
+`fe8a4ea1ffedaf415f4da2f062534de366a451e6`, requests float16, allocates
+30% of free GPU memory to the KV cache, and disables cross-request block reuse.
+The allocation fraction is not 30% of total VRAM. The launch script mounts
+this file read-only and selects it through NVIDIA's `LLM_CONFIG_PATH` setting.
+Shell syntax checks passed. Startup evidence at 2026-09-09 03:58:28 UTC
+shows the exact snapshot path, `dtype='float16'`,
+`free_gpu_memory_fraction=0.3`, and `enable_block_reuse=False` in the engine
+arguments. The model reached READY at 03:59:07 UTC, and the user's smoke
+test returned generated text successfully. Startup reported a final KV-cache
+allocation of 1.26 GiB (60064 tokens), following an initial 1.34 GiB stage;
+these values are not summed or interpreted as total GPU usage.
+
+The inspection script reads the selected `LLM_CONFIG_PATH` when present and
+reports package versions, cached snapshot candidates and selected startup
+logs. Checkpoint metadata is labeled separately from runtime configuration.
+Existing benchmark JSON records still contain unknown runtime fields; linking
+verified configuration evidence to each new run remains future work. No
+performance benchmark has yet been recorded for this new configuration.
+
+These settings define a new workload configuration. Do not apply them
+retroactively to saved runs. The checkpoint metadata declaring bfloat16 does
+not override the requested runtime float16 conversion. Disabling block reuse
+does not disable within-request KV caching during generation.
+
 ### Deterministic comparison tool
 
 Run `scripts/compare_runs.py FIRST.json SECOND.json` with Python 3.
