@@ -58,6 +58,23 @@ refusal as a failed run before the successful measurement above.
 
 ## Remaining work
 
+### Independent repeat: matching recorded settings, unresolved variation
+
+Comparing `triton-20260910T030512.539831Z.json` with
+`triton-20260910T034636.947864Z.json` reports `recorded_settings_match`,
+with no missing or different comparison fields. Both used the same container.
+Median HTTP completion latency increased from 199.46 to 631.64 ms (216.68%,
+approximately 3.17 times the duration). Server TTFT increased from 18.42 to
+30.81 ms. The first response text matches across runs; no actual token counts
+were measured. The second run's individual HTTP times range from 620.44 to
+644.57 ms, so its increase was not confined to one isolated slow request.
+
+The evidence does not identify a cause. GPU clocks, temperature, utilization,
+power state and competing workload were not sampled during these runs.
+Next diagnostic work should collect those signals alongside requests before
+attributing this change to the code, cache, or model. Do not present these
+two five-sample observations as a causal regression or optimization claim.
+
 ### Per-run container evidence (live verified)
 
 From PowerShell, with Triton already READY:
