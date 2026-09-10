@@ -3,9 +3,9 @@ set -euo pipefail
 
 # Run from Ubuntu. The foreground server stops when you press Ctrl+C.
 IMAGE='nvcr.io/nvidia/tritonserver@sha256:b097871d05da2e63178d1b91fd1199bc395f653ade4f05ab227c463ea7437007'
-SOURCE='/mnt/m/Projects/TensorRT-LLM-v1.2.1'
-CACHE='/home/eggcorn/.cache/huggingface'
 PROJECT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+SOURCE="${TURBOSERVE_TRTLLM_SOURCE:-$(dirname -- "$PROJECT")/TensorRT-LLM-v1.2.1}"
+CACHE="${TURBOSERVE_HF_CACHE:-$HOME/.cache/huggingface}"
 CONFIG="$PROJECT/configs/triton-model.yaml"
 SNAPSHOT="$CACHE/hub/models--TinyLlama--TinyLlama-1.1B-Chat-v1.0/snapshots/fe8a4ea1ffedaf415f4da2f062534de366a451e6"
 if [[ ! -f "$CONFIG" || ! -f "$SNAPSHOT/config.json" || ! -f "$SNAPSHOT/model.safetensors" ]]; then

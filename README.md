@@ -1,118 +1,138 @@
 # TurboServe
 
-TurboServe is a Python portfolio project for serving a local language model and measuring its inference performance. It runs TinyLlama on an 8 GB NVIDIA RTX 3060 Ti through ordinary PyTorch, NVIDIA TensorRT-LLM, and Triton Inference Server. The goal is to make performance comparisons reproducible and explainable on a constrained consumer GPU.
+**Local LLM serving and evidence-based performance analysis on an 8 GB GPU.**
 
-The project is intentionally being built in small, testable milestones. Dependencies and directories will be added only when a milestone needs them.
+TurboServe runs TinyLlama through PyTorch, NVIDIA TensorRT-LLM, and Triton
+Inference Server. It records request timings alongside container and model
+configuration evidence, then checks whether saved runs have matching settings.
+The goal is to understand inference performance and demonstrate improvements
+through reproducible experiments.
 
-## Current status
+**Status:** serving is verified; benchmarking is in progress. This is a portfolio
+engineering project, not a production deployment or completed performance study.
 
-**Milestone 5 — benchmarking and results analysis (in progress)**
+## Capabilities
 
-The ordinary PyTorch baseline and an isolated NVIDIA TensorRT-LLM 1.2.1 path
-both run TinyLlama on the RTX 3060 Ti. On September 8, 2026, the Triton
-deployment reached READY and returned generated text through its HTTP API.
-See [`docs/milestone-4-triton-serving.md`](docs/milestone-4-triton-serving.md)
-for the verified result, launch commands, and remaining limitations.
+- Standalone PyTorch and TensorRT-LLM inference.
+- Local Triton HTTP serving with a pinned image and model snapshot.
+- Sequential benchmarks with full-response latency and server-side TTFT.
+- JSON records with responses, timings, and container configuration evidence.
+- Comparison checks for missing, stale, or different recorded settings.
+- Offline tests for measurement accounting and evidence validation.
 
-The project now includes sequential HTTP benchmarking, server-side time to
-first token (TTFT), saved JSON run records, container configuration snapshots,
-and a comparison tool that flags missing or mismatched evidence.
-See [`docs/milestone-5-benchmarking.md`](docs/milestone-5-benchmarking.md).
+## Architecture
 
-## How it works
-
-The client sends a prompt to Triton over local HTTP. Triton's Python backend
-invokes TensorRT-LLM, which runs TinyLlama on the GPU and returns generated text.
-The benchmark records individual response timings, then checks that the
-container and selected configuration stayed consistent during the run.
-The comparison tool reads saved results without making new inference requests.
-
-## Run on the configured development machine
-
-These commands target Windows PowerShell and the existing Ubuntu-24.04 WSL
-installation. Setup is machine-specific: the repository is on M:, NVIDIA's
-v1.2.1 template checkout is alongside it, and the model cache belongs to the
-Ubuntu user `eggcorn`. New users should read the milestone documents before
-running setup scripts; they install system packages and configure Docker.
-
-Terminal 1 starts the server; leave it open and wait for `READY`:
-
-```powershell
-wsl -d Ubuntu-24.04 -- bash /mnt/m/Projects/TurboServe/scripts/start-triton-wsl.sh
+```mermaid
+flowchart LR
+    Client[Python benchmark client] -->|HTTP prompt| Triton[Triton server]
+    Triton --> Runtime[TensorRT-LLM]
+    Runtime --> GPU[TinyLlama on NVIDIA GPU]
+    GPU -->|Generated text| Runtime
+    Runtime --> Triton
+    Triton -->|JSON response| Client
+    Docker[Container inspection] -->|Evidence| Client
+    Client --> Records[JSON run records]
+    Records --> Compare[Comparison tool]
 ```
 
-Terminal 2 checks generation, or runs a short benchmark with container evidence:
+The server keeps the model loaded between requests. The benchmark checks container
+evidence before and after measurement. Comparisons read saved records; they do
+not invoke a model or establish the cause of a timing change.
 
-```powershell
-wsl -d Ubuntu-24.04 -- bash /mnt/m/Projects/TurboServe/scripts/test-triton-wsl.sh
-wsl -d Ubuntu-24.04 -- bash /mnt/m/Projects/TurboServe/scripts/benchmark-with-runtime-wsl.sh
-```
+## Requirements and setup
 
-The benchmark uses one warmup and five measured requests by default. Results
-are saved under `results/`, which is excluded from Git. Prompts and responses
-are included in these files; review them before sharing. Stop the server with
-Ctrl+C in Terminal 1. HTTP, gRPC and metrics ports are published on loopback only.
+Verified on Windows 11, Ubuntu 24.04 under WSL2, an RTX 3060 Ti (8 GB), Docker
+Engine, NVIDIA Container Toolkit, and Python 3.12. Other environments have not
+been validated. Benchmark clients use Python's standard library.
 
-Compare two saved records inside Ubuntu (replace FIRST.json and SECOND.json):
+For a fresh machine, follow the [environment assessment](docs/milestone-1-environment.md)
+and [Triton setup notes](docs/milestone-4-triton-serving.md). Setup scripts install
+system packages and configure Docker; review them before execution.
+
+The launcher requires NVIDIA's TensorRT-LLM `v1.2.1` template checkout and the
+cached snapshot specified in [the model configuration](configs/triton-model.yaml).
+It checks for these files; it does not download missing weights.
+
+Default paths are `TensorRT-LLM-v1.2.1` alongside this repository and the current
+Ubuntu user's `~/.cache/huggingface`. Override them in Ubuntu if needed:
 
 ```bash
-python3 /mnt/m/Projects/TurboServe/scripts/compare_runs.py FIRST.json SECOND.json
+export TURBOSERVE_TRTLLM_SOURCE=/absolute/path/to/TensorRT-LLM-v1.2.1
+export TURBOSERVE_HF_CACHE=/absolute/path/to/huggingface
 ```
 
-Run offline tests from PowerShell without loading a model:
+## Quick start
 
-```powershell
-wsl -d Ubuntu-24.04 -- python3 -m unittest discover -s /mnt/m/Projects/TurboServe/scripts -p 'test_*.py'
+Run from the repository root **inside Ubuntu**, after completing setup.
+From PowerShell, enter Ubuntu with `wsl -d Ubuntu-24.04` first.
+
+Terminal 1 — start the server and wait for `READY`:
+
+```bash
+bash scripts/start-triton-wsl.sh
 ```
 
-## Evidence and limitations
+Terminal 2 — check generation, then benchmark:
 
-Two five-request runs with matching recorded settings had median HTTP completion
-times of 199.46 ms and 631.64 ms, with server-side TTFT of 18.42 ms and 30.81 ms.
-This variation is unresolved; it is not a demonstrated optimization result.
-The records do not include GPU utilization, clocks, temperature, or concurrent
-desktop activity during measurement. Full HTTP completion time and server-side
-TTFT are different measurements; client-observed streaming TTFT is not measured.
-
-The selected configuration pins a cached TinyLlama snapshot, requests float16,
-uses a 30% free-memory KV-cache budget, and disables cross-request block reuse.
-Container inspection records declared settings, not loaded-tensor introspection.
-Actual output-token accounting, controlled cross-backend comparisons and
-concurrency testing remain incomplete. The startup script also applies a pinned
-OpenAI SDK correction inside each temporary container; it needs network access.
-
-## Project map
-
-- `src/turboserve/`: standalone PyTorch and TensorRT-LLM runners.
-- `configs/triton-model.yaml`: explicit Triton LLM configuration.
-- `scripts/`: setup, serving, benchmarking, evidence capture, comparisons and tests.
-- `docs/`: milestone decisions, verified results and known limitations.
-
-Future work includes a performance investigation assistant that calls these
-comparison tools and explains their evidence. MCP and agent integration are
-planned extensions, not implemented features.
-
-## Run the Windows/WSL assessment
-
-Open PowerShell on the Windows development PC, change to this repository, and run:
-
-```powershell
-Set-ExecutionPolicy -Scope Process Bypass
-.\scripts\assess-environment.ps1
+```bash
+bash scripts/test-triton-wsl.sh
+bash scripts/benchmark-with-runtime-wsl.sh
 ```
 
-`Set-ExecutionPolicy -Scope Process Bypass` applies only to that PowerShell window. The assessment script does not install or configure anything; it prints system and tool information so we can decide what Milestone 2 actually needs.
+The default benchmark excludes one warmup and measures five sequential requests.
+Records are saved in Git-ignored `results/`. They include prompts and responses;
+review before sharing. Press Ctrl+C in Terminal 1 to stop the server. HTTP, gRPC
+and metrics ports are published on loopback only.
 
-Review the output before sharing it publicly. The script avoids intentionally collecting serial numbers, product keys, environment variables, or credentials.
+Compare two records and run offline tests:
 
-## Milestones
+```bash
+python3 scripts/compare_runs.py results/FIRST.json results/SECOND.json
+python3 -m unittest discover -s scripts -p 'test_*.py'
+```
 
-1. Environment assessment and repository foundation
-2. Reproducible PyTorch inference baseline
-3. TensorRT-LLM optimization of the same model
-4. Triton Inference Server deployment
-5. Benchmarking, concurrency testing, and results analysis
+Replace the example filenames with actual records. Tests do not require a GPU
+server. Standalone inference runners are documented in the milestone guides.
 
-Triton serving is verified. Benchmarking is underway. A future
-performance investigation assistant will use saved measurements and comparison
-tools; it has not been implemented yet.
+## Measurement evidence
+
+Two independent five-request runs with matching recorded settings produced:
+
+| Run (UTC, September 10) | Median HTTP completion | Median server TTFT |
+| --- | ---: | ---: |
+| 03:05 | 199.46 ms | 18.42 ms |
+| 03:46 | 631.64 ms | 30.81 ms |
+
+This variation is unresolved, not a demonstrated speedup or causal regression.
+Those runs did not sample GPU utilization, clocks, temperature, or competing
+workload. See the [benchmark methodology](docs/milestone-5-benchmarking.md) for
+identifiers, conditions, and limitations.
+
+Server TTFT measures executor arrival to first-token generation. Client-observed
+streaming TTFT, actual output-token accounting, controlled cross-backend
+comparisons, and concurrency tests remain unfinished. Matching recorded settings
+does not prove identical loaded tensors or system load.
+
+The selected configuration pins float16, a cached model snapshot, and a KV-cache
+budget. The temporary container installs a pinned SDK correction at startup,
+requiring network access. There is no authentication or web chat interface.
+
+## Project guide
+
+| Location | Purpose |
+| --- | --- |
+| `src/turboserve/` | Standalone inference runners |
+| `configs/` | Server model configuration |
+| `scripts/` | Setup, serving, measurements, comparisons and tests |
+| `docs/` | Decisions, verified evidence and limitations |
+
+1. [Environment assessment](docs/milestone-1-environment.md)
+2. [PyTorch baseline](docs/milestone-2-pytorch-baseline.md)
+3. [TensorRT-LLM path](docs/milestone-3-tensorrt-llm.md)
+4. [Triton serving](docs/milestone-4-triton-serving.md)
+5. [Benchmarking — in progress](docs/milestone-5-benchmarking.md)
+
+Next: capture diagnostic GPU signals, strengthen workload controls, and measure
+concurrent requests. A later AI investigation assistant will use validated
+comparison tools to explain evidence. MCP and agent integration are planned,
+not implemented.

@@ -31,7 +31,10 @@ instructed but has not yet been confirmed in supplied output.
   `/mnt/m/Projects/TensorRT-LLM-v1.2.1`.
 - Existing model cache: `/home/eggcorn/.cache/huggingface`.
 
-The launch script currently targets these machine-specific paths. The
+The original deployment used these machine-specific paths. The launch script
+now defaults to the current Ubuntu user's Hugging Face cache and the NVIDIA
+checkout alongside this repository. Set `TURBOSERVE_HF_CACHE` and
+`TURBOSERVE_TRTLLM_SOURCE` to override these paths (see README). The
 template is an external checkout, mounted read-only; it is not vendored
 into TurboServe. On another machine, obtain the same tag and adjust paths.
 The container image is pinned by digest, but model revision and all
