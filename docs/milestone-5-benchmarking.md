@@ -58,6 +58,37 @@ refusal as a failed run before the successful measurement above.
 
 ## Remaining work
 
+### Per-run container evidence (live verified)
+
+From PowerShell, with Triton already READY:
+
+```powershell
+wsl -d Ubuntu-24.04 -- bash /mnt/m/Projects/TurboServe/scripts/benchmark-with-runtime-wsl.sh
+```
+
+This wrapper authenticates sudo locally and runs the benchmark as the normal
+user with `--capture-runtime`. Schema 4 attaches fresh container identity,
+image identity, start time, selected YAML, package versions and configuration
+fingerprints. It verifies the local HTTP port binding and checks that the
+configuration fetched inside the container matches the benchmark endpoint.
+After measured requests it checks for container or configuration changes;
+a detected change fails the run and preserves samples for diagnosis.
+
+Evidence is collected outside request timers. No model is loaded by the
+inspection. Selected YAML is declared configuration, not loaded-tensor
+introspection; the existing unknown effective-runtime fields remain unchanged.
+This evidence narrows ambiguity but is not cryptographic server attestation.
+The standalone benchmark command still works without Docker evidence.
+Sixteen offline tests and Bash syntax validation passed. Live run
+`triton-20260910T030512.539831Z.json` completed on September 9 Eastern time
+with five measured requests after one excluded warmup. The snapshot selected
+revision `fe8a4ea1ffedaf415f4da2f062534de366a451e6`, float16, KV-cache fraction
+0.30 and block reuse disabled. Before/after checks passed for container
+identity, selected YAML and packages; the run saved `runtime_verified_at_utc`.
+Median HTTP completion latency was 199.46 ms and median server TTFT was
+18.42 ms (five valid pairs). These are descriptive results for this small
+workload, not proof of an improvement over earlier configurations.
+
 ### Explicit server configuration (restart and request verified)
 
 `configs/triton-model.yaml` now selects cached snapshot

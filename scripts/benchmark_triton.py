@@ -12,6 +12,8 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+import runtime_snapshot
+
 
 def request(path, payload=None, timeout=120):
     data = None if payload is None else json.dumps(payload).encode()
@@ -91,6 +93,8 @@ def main():
     parser.add_argument('--warmups', type=int, default=1)
     parser.add_argument('--max-new-tokens', type=int, default=32)
     parser.add_argument('--prompt', default='Low latency is important because')
+    parser.add_argument('--capture-runtime', action='store_true',
+                        help='Require fresh Docker evidence; authenticate sudo first')
     args = parser.parse_args()
     if not 1 <= args.requests <= 100 or not 0 <= args.warmups <= 10:
         parser.error('Use 1–100 requests and 0–10 warmups')
@@ -107,7 +111,7 @@ def main():
                'sampling_param_seed': 0,
                'sampling_param_return_perf_metrics': True}
     record = {
-        'schema_version': 3, 'started_at_utc': stamp.isoformat(),
+        'schema_version': 4, 'started_at_utc': stamp.isoformat(),
         'status': 'incomplete', 'endpoint': 'http://127.0.0.1:8000',
         'workload': 'sequential_repeated_prompt', 'concurrency': 1,
         'request_payload': payload, 'warmup_count': args.warmups,
@@ -124,6 +128,9 @@ def main():
         request('/v2/models/tensorrt_llm/ready', timeout=10)
         _, record['server_metadata'] = request('/v2', timeout=10)
         record['model_configuration'] = collect_model_config()
+        if args.capture_runtime:
+            record['runtime_snapshot'] = runtime_snapshot.capture(
+                record['model_configuration'].get('sha256'))
         print('Run metadata captured (outside request timers)')
         for index in range(args.warmups + args.requests):
             elapsed, response = request('/v2/models/tensorrt_llm/generate', payload)
@@ -136,6 +143,8 @@ def main():
             sample['server_ttft_seconds'] = server_ttft(response)
             record['samples'].append(sample)
             print(f'Request {index - args.warmups + 1}: {elapsed:.3f} s')
+        if args.capture_runtime:
+            record['runtime_verified_at_utc'] = runtime_snapshot.verify(record['runtime_snapshot'])
         values = [sample['latency_seconds'] for sample in record['samples']]
         record['summary'] = {'count': len(values),
                              'mean_seconds': statistics.mean(values),
@@ -152,7 +161,7 @@ def main():
             print('Server TTFT unavailable: no valid timestamp pairs returned')
         record['status'] = 'complete'
         print(f'Median HTTP completion latency: {statistics.median(values):.3f} s')
-    except (HTTPError, URLError, TimeoutError, OSError, ValueError) as exc:
+    except (HTTPError, URLError, TimeoutError, OSError, ValueError, subprocess.SubprocessError) as exc:
         record['status'] = 'failed'
         record['error'] = str(exc)
         print(f'Run failed: {exc}')
