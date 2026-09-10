@@ -118,6 +118,20 @@ does not disable within-request KV caching during generation.
 
 ### Deterministic comparison tool
 
+The comparator now uses the runtime snapshot's image, packages, selected
+model path, precision, parallelism and cache settings instead of the legacy
+null effective-runtime fields. It requires verification timestamps ordered
+within the run, a recorded running container identity and a matching HTTP
+configuration fingerprint. Container IDs need not match across independent
+runs. `recorded_settings_match` describes recorded declarations only; it does
+not prove loaded tensor state or justify a causal performance conclusion.
+
+Nineteen offline tests passed. The September 9 snapshot record compared with
+itself reported matching settings and zero change (a consistency check, not
+an independent benchmark). Comparing an earlier record without a snapshot
+against it correctly reported `incomplete_context`. No new GPU requests
+were needed to validate this comparison update.
+
 Run `scripts/compare_runs.py FIRST.json SECOND.json` with Python 3.
 It reads saved records only, recalculates medians from individual samples,
 and reports the observed percentage change. It rejects failed/incomplete

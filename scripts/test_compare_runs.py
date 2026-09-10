@@ -1,6 +1,7 @@
 import unittest
 
-from compare_runs import compare
+from compare_runs import compare, FIELDS
+from copy import deepcopy
 
 
 def run(values):
@@ -16,7 +17,45 @@ class ComparisonTests(unittest.TestCase):
         result = compare(first, second)
         self.assertEqual(result['observed_latency_change_percent'], -50)
         self.assertEqual(result['comparison_status'], 'incomplete_context')
-        self.assertIn('environment.server_precision', result['unknown_fields'])
+        self.assertIn('runtime_snapshot.selected_yaml.dtype', result['unknown_fields'])
+
+    def complete_run(self):
+        record = run([1, 2, 3])
+        for path in FIELDS:
+            parent = record
+            parts = path.split('.')
+            for part in parts[:-1]:
+                parent = parent.setdefault(part, {})
+            parent.setdefault(parts[-1], 'test')
+        record.update(started_at_utc='2026-09-10T00:00:00Z',
+                      finished_at_utc='2026-09-10T00:01:00Z',
+                      runtime_verified_at_utc='2026-09-10T00:00:50Z')
+        record['runtime_snapshot'] = {
+            'captured_at_utc': '2026-09-10T00:00:10Z',
+            'container': {'id': 'one', 'running': True, 'image': 'pinned'},
+            'triton_config_sha256': 'test', 'packages': {'torch': 'test'},
+            'selected_yaml': {'model': '/snapshot/revision', 'dtype': 'float16',
+                'backend': 'pytorch', 'tensor_parallel_size': 1, 'pipeline_parallel_size': 1,
+                'kv_cache_config': {'free_gpu_memory_fraction': 0.3, 'enable_block_reuse': False}}}
+        return record
+
+    def test_matching_settings_allow_different_container_ids(self):
+        first = self.complete_run()
+        second = deepcopy(first)
+        second['runtime_snapshot']['container']['id'] = 'two'
+        self.assertEqual(compare(first, second)['comparison_status'], 'recorded_settings_match')
+
+    def test_changed_precision(self):
+        first, second = self.complete_run(), self.complete_run()
+        second['runtime_snapshot']['selected_yaml']['dtype'] = 'bfloat16'
+        self.assertEqual(compare(first, second)['comparison_status'], 'settings_differ')
+
+    def test_stale_snapshot_and_mismatched_fingerprint(self):
+        for change in [{'captured_at_utc': '2026-09-09T00:00:00Z'},
+                       {'triton_config_sha256': 'wrong'}]:
+            first, second = self.complete_run(), self.complete_run()
+            second['runtime_snapshot'].update(change)
+            self.assertEqual(compare(first, second)['comparison_status'], 'incomplete_context')
 
     def test_flags_different_concurrency(self):
         first, second = run([1]), run([1])

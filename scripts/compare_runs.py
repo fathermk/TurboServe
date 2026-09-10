@@ -1,6 +1,7 @@
 """Describe two local benchmark records without asserting causation or speedup."""
 
 import argparse
+from datetime import datetime
 import json
 import math
 from pathlib import Path
@@ -12,9 +13,45 @@ FIELDS = [
     'warmup_count', 'request_payload', 'server_metadata.version',
     'environment.benchmark_sha256', 'environment.client_python',
     'environment.local_gpu_inventory.value', 'model_configuration.sha256',
-    'environment.server_model_weight_revision', 'environment.server_precision',
-    'environment.server_kv_cache_settings',
 ]
+
+RUNTIME_FIELDS = [
+    'runtime_snapshot.container.image',
+    'runtime_snapshot.selected_yaml.model',
+    'runtime_snapshot.selected_yaml.dtype',
+    'runtime_snapshot.selected_yaml.backend',
+    'runtime_snapshot.selected_yaml.tensor_parallel_size',
+    'runtime_snapshot.selected_yaml.pipeline_parallel_size',
+    'runtime_snapshot.selected_yaml.kv_cache_config.free_gpu_memory_fraction',
+    'runtime_snapshot.selected_yaml.kv_cache_config.enable_block_reuse',
+    'runtime_snapshot.selected_yaml', 'runtime_snapshot.packages',
+]
+
+
+def snapshot_problem(record):
+    """Check recorded verification evidence, not the current live server."""
+    try:
+        def date(path):
+            value = datetime.fromisoformat(get(record, path))
+            if value.utcoffset() is None:
+                raise ValueError('Timestamp has no timezone')
+            return value
+        start = date('started_at_utc')
+        captured = date('runtime_snapshot.captured_at_utc')
+        verified = date('runtime_verified_at_utc')
+        end = date('finished_at_utc')
+        if not start <= captured <= verified <= end:
+            return 'Snapshot verification timestamps fall outside the run or are reversed'
+    except (TypeError, ValueError):
+        return 'Missing or invalid runtime verification timestamps'
+    if get(record, 'runtime_snapshot.container.running') is not True:
+        return 'Snapshot does not report a running container'
+    if not get(record, 'runtime_snapshot.container.id'):
+        return 'Missing container identity'
+    fingerprint = get(record, 'runtime_snapshot.triton_config_sha256')
+    if not fingerprint or fingerprint != get(record, 'model_configuration.sha256'):
+        return 'Snapshot model configuration fingerprint is missing or inconsistent'
+    return None
 
 
 def get(record, path):
@@ -44,17 +81,23 @@ def latencies(record):
 def compare(first, second):
     left, right = latencies(first), latencies(second)
     unknown, different = [], []
-    for field in FIELDS:
+    evidence_problems = {'first': snapshot_problem(first), 'second': snapshot_problem(second)}
+    for field in FIELDS + RUNTIME_FIELDS:
         a, b = get(first, field), get(second, field)
         if a is None or b is None:
             unknown.append(field)
         elif a != b:
             different.append(field)
+    for label, problem in evidence_problems.items():
+        if problem:
+            unknown.append(f'{label}.runtime_verification')
     a, b = statistics.median(left), statistics.median(right)
     return {
         'comparison_status': 'incomplete_context' if unknown else (
             'settings_differ' if different else 'recorded_settings_match'),
         'unknown_fields': unknown, 'different_fields': different,
+        'runtime_evidence_problems': evidence_problems,
+        'comparison_scope': 'Recorded workload and declared server settings; not loaded-tensor introspection',
         'first_sample_count': len(left), 'second_sample_count': len(right),
         'first_median_seconds': a, 'second_median_seconds': b,
         'observed_latency_change_percent': (b - a) / a * 100,
