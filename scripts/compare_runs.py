@@ -9,7 +9,7 @@ import statistics
 
 
 FIELDS = [
-    'schema_version', 'measurement', 'workload', 'concurrency',
+    'schema_version', 'measurement', 'workload', 'concurrency', 'telemetry_settings',
     'warmup_count', 'request_payload', 'server_metadata.version',
     'environment.benchmark_sha256', 'environment.client_python',
     'environment.local_gpu_inventory.value', 'model_configuration.sha256',

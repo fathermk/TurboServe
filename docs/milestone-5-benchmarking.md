@@ -58,6 +58,37 @@ refusal as a failed run before the successful measurement above.
 
 ## Remaining work
 
+### Optional GPU telemetry (live verified)
+
+Add `--gpu-telemetry` to the benchmark or its runtime-evidence wrapper to
+sample device-wide utilization, memory use, temperature, SM/memory clocks,
+power and performance state with nvidia-smi. Sampling targets a 0.5-second
+interval during measured requests, excluding warmup. A query already in
+progress may complete after the final request. Query start timestamps and
+durations are saved alongside request start timestamps. N/A values remain
+strings; they are never treated as zero.
+
+This polling launches subprocesses and can perturb timings. Schema 5 records
+telemetry settings, and the comparison tool checks them. Device-wide activity
+includes other applications but does not identify them or prove a cause for
+latency changes. Short runs provide few samples and may miss brief spikes.
+No GPU settings are modified. Missing tools or unsupported queries are reported
+as unavailable/partial telemetry rather than invalidating inference timings.
+
+Twenty-two offline tests passed. A live attempt found the server stopped and
+correctly saved a failed record with no samples. After startup, run
+`triton-20260910T172924.994247Z.json` completed 20 measured requests and one
+excluded warmup. Median HTTP completion latency was 211.38 ms; median server
+TTFT was 19.16 ms (20 valid pairs). HTTP samples ranged from 209.67 to 232.42 ms.
+
+Nine GPU samples were captured without errors. Device-wide utilization ranged
+from 84–99%, memory usage from 5277–5289 MiB, and temperature from 45–57 C.
+Reported SM clocks were 225 MHz in the first sample, 1935 MHz in the second,
+and 1950 MHz thereafter; all samples reported P0. These differently timed
+signals are observations, not proof of throttling or its absence. Polling
+queries took approximately 32–36 ms each. No causal explanation for the
+earlier 632 ms run is established because it lacked matching telemetry.
+
 ### Independent repeat: matching recorded settings, unresolved variation
 
 Comparing `triton-20260910T030512.539831Z.json` with

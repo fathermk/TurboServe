@@ -13,6 +13,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 import runtime_snapshot
+from gpu_telemetry import Sampler
 
 
 def request(path, payload=None, timeout=120):
@@ -95,6 +96,8 @@ def main():
     parser.add_argument('--prompt', default='Low latency is important because')
     parser.add_argument('--capture-runtime', action='store_true',
                         help='Require fresh Docker evidence; authenticate sudo first')
+    parser.add_argument('--gpu-telemetry', action='store_true',
+                        help='Sample device-wide GPU signals during measured requests (adds overhead)')
     args = parser.parse_args()
     if not 1 <= args.requests <= 100 or not 0 <= args.warmups <= 10:
         parser.error('Use 1–100 requests and 0–10 warmups')
@@ -111,7 +114,9 @@ def main():
                'sampling_param_seed': 0,
                'sampling_param_return_perf_metrics': True}
     record = {
-        'schema_version': 4, 'started_at_utc': stamp.isoformat(),
+        'schema_version': 5, 'started_at_utc': stamp.isoformat(),
+        'telemetry_settings': {'enabled': args.gpu_telemetry,
+                               'interval_seconds': 0.5 if args.gpu_telemetry else None},
         'status': 'incomplete', 'endpoint': 'http://127.0.0.1:8000',
         'workload': 'sequential_repeated_prompt', 'concurrency': 1,
         'request_payload': payload, 'warmup_count': args.warmups,
@@ -123,6 +128,7 @@ def main():
                         'Server model revision, precision and cache settings not captured',
                         'Not comparable to standalone generation-only timings'],
     }
+    sampler = Sampler() if args.gpu_telemetry else None
     try:
         record['environment'] = collect_environment()
         request('/v2/models/tensorrt_llm/ready', timeout=10)
@@ -133,16 +139,22 @@ def main():
                 record['model_configuration'].get('sha256'))
         print('Run metadata captured (outside request timers)')
         for index in range(args.warmups + args.requests):
+            if sampler is not None and index == args.warmups:
+                sampler.start()
+            request_started_at = datetime.now(timezone.utc).isoformat()
             elapsed, response = request('/v2/models/tensorrt_llm/generate', payload)
             if not isinstance(response, dict) or not response.get('text_output'):
                 raise ValueError('Response does not contain nonempty text_output')
             if index < args.warmups:
                 print(f'Warmup {index + 1} complete (excluded)')
                 continue
-            sample = {'latency_seconds': elapsed, 'response': response}
+            sample = {'latency_seconds': elapsed, 'response': response,
+                      'request_started_at_utc': request_started_at}
             sample['server_ttft_seconds'] = server_ttft(response)
             record['samples'].append(sample)
             print(f'Request {index - args.warmups + 1}: {elapsed:.3f} s')
+        if sampler is not None:
+            record['gpu_telemetry'] = sampler.stop()
         if args.capture_runtime:
             record['runtime_verified_at_utc'] = runtime_snapshot.verify(record['runtime_snapshot'])
         values = [sample['latency_seconds'] for sample in record['samples']]
@@ -166,6 +178,10 @@ def main():
         record['error'] = str(exc)
         print(f'Run failed: {exc}')
     finally:
+        if sampler is not None:
+            record['gpu_telemetry'] = sampler.stop()
+            print(f"GPU telemetry: {record['gpu_telemetry']['status']}, "
+                  f"{len(record['gpu_telemetry']['samples'])} samples")
         record['finished_at_utc'] = datetime.now(timezone.utc).isoformat()
         with output_path.open('x', encoding='utf-8') as handle:
             json.dump(record, handle, indent=2)

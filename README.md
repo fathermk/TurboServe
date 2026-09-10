@@ -19,6 +19,7 @@ engineering project, not a production deployment or completed performance study.
 - JSON records with responses, timings, and container configuration evidence.
 - Comparison checks for missing, stale, or different recorded settings.
 - Offline tests for measurement accounting and evidence validation.
+- Optional device-wide GPU telemetry alongside measured requests.
 
 ## Architecture
 
@@ -78,6 +79,16 @@ Terminal 2 — check generation, then benchmark:
 bash scripts/test-triton-wsl.sh
 bash scripts/benchmark-with-runtime-wsl.sh
 ```
+
+For diagnostic GPU sampling during a longer run:
+
+```bash
+bash scripts/benchmark-with-runtime-wsl.sh --gpu-telemetry --requests 20
+```
+
+Sampling records utilization, clocks, memory, temperature, power and performance
+state. It adds overhead and includes other GPU applications; compare runs with
+matching telemetry settings.
 
 The default benchmark excludes one warmup and measures five sequential requests.
 Records are saved in Git-ignored `results/`. They include prompts and responses;
