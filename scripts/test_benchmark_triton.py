@@ -5,6 +5,7 @@ import io
 import json
 from pathlib import Path
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 from urllib.error import URLError
@@ -13,6 +14,30 @@ import benchmark_triton as benchmark
 
 
 class BenchmarkTests(unittest.TestCase):
+    def test_concurrent_requests_overlap_and_preserve_order(self):
+        barrier = threading.Barrier(2)
+        def reply(*args, **kwargs):
+            barrier.wait(timeout=5)
+            return 0.1, {'text_output': 'ok'}
+        result = {'samples': []}
+        with patch.object(benchmark, 'request', side_effect=reply), \
+             contextlib.redirect_stdout(io.StringIO()):
+            benchmark.measure(result, {}, 4, 2)
+        self.assertEqual([s['request_index'] for s in result['samples']], [1, 2, 3, 4])
+        self.assertGreater(result['measurement_wall_seconds'], 0)
+
+    def test_concurrent_failure_drains_and_preserves_successes(self):
+        def sample(payload, index):
+            if index == 2:
+                raise URLError('offline')
+            return {'request_index': index, 'latency_seconds': 0.1}
+        result = {'samples': []}
+        with patch.object(benchmark, 'generate_sample', side_effect=sample), \
+             contextlib.redirect_stdout(io.StringIO()), self.assertRaises(ValueError):
+            benchmark.measure(result, {}, 4, 2)
+        self.assertEqual([s['request_index'] for s in result['samples']], [1, 3, 4])
+        self.assertEqual(result['request_errors'][0]['request_index'], 2)
+
     def test_server_ttft_formats(self):
         for arrival, first in [(100, 200), ([100], [200]), ('100', '200')]:
             self.assertAlmostEqual(benchmark.server_ttft(

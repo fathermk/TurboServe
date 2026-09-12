@@ -15,7 +15,7 @@ engineering project, not a production deployment or completed performance study.
 
 - Standalone PyTorch and TensorRT-LLM inference.
 - Local Triton HTTP serving with a pinned image and model snapshot.
-- Sequential benchmarks with full-response latency and server-side TTFT.
+- Bounded concurrent benchmarks with full-response latency and server-side TTFT.
 - JSON records with responses, timings, and container configuration evidence.
 - Comparison checks for missing, stale, or different recorded settings.
 - Offline tests for measurement accounting and evidence validation.
@@ -102,6 +102,16 @@ python3 scripts/compare_runs.py results/FIRST.json results/SECOND.json
 python3 -m unittest discover -s scripts -p 'test_*.py'
 ```
 
+To summarize one saved run as Markdown without starting the server:
+
+```bash
+python3 scripts/report_run.py results/RUN.json
+```
+
+The report recalculates latency statistics, counts valid server TTFT samples,
+checks recorded runtime evidence, and summarizes GPU observations per device.
+Missing measurements remain unavailable; the report does not infer speedups.
+
 Replace the example filenames with actual records. Tests do not require a GPU
 server. Standalone inference runners are documented in the milestone guides.
 
@@ -143,7 +153,13 @@ requiring network access. There is no authentication or web chat interface.
 4. [Triton serving](docs/milestone-4-triton-serving.md)
 5. [Benchmarking — in progress](docs/milestone-5-benchmarking.md)
 
-Next: capture diagnostic GPU signals, strengthen workload controls, and measure
-concurrent requests. A later AI investigation assistant will use validated
+Next: strengthen workload controls and add actual output-token accounting.
+A later AI investigation assistant will use validated
 comparison tools to explain evidence. MCP and agent integration are planned,
 not implemented.
+
+Concurrency support passed offline tests and two live 1-versus-2 experimental pairs.
+Use `--concurrency 2 --requests 20` with the benchmark wrapper to allow up to two
+active requests. Collect a fresh `--concurrency 1` run with the same settings
+first. Request throughput is completed requests divided by the measured batch
+wall time, not tokens per second.

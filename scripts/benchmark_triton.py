@@ -1,6 +1,7 @@
-"""Measure sequential HTTP completion latency; no third-party packages required."""
+"""Measure bounded concurrent HTTP completion latency using the standard library."""
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 import json
 import hashlib
@@ -88,9 +89,41 @@ def collect_model_config():
         return {'status': 'unavailable', 'reason': str(exc)}
 
 
+def generate_sample(payload, index):
+    started = datetime.now(timezone.utc).isoformat()
+    elapsed, response = request('/v2/models/tensorrt_llm/generate', payload)
+    if not isinstance(response, dict) or not response.get('text_output'):
+        raise ValueError('Response does not contain nonempty text_output')
+    return {'request_index': index, 'latency_seconds': elapsed, 'response': response,
+            'request_started_at_utc': started,
+            'server_ttft_seconds': server_ttft(response)}
+
+
+def measure(record, payload, count, concurrency):
+    """Bound active requests; drain submitted work and preserve successes on failure."""
+    started = time.perf_counter()
+    errors = []
+    with ThreadPoolExecutor(max_workers=concurrency) as pool:
+        futures = {pool.submit(generate_sample, payload, i): i for i in range(1, count + 1)}
+        for future in as_completed(futures):
+            try:
+                sample = future.result()
+                record['samples'].append(sample)
+                print(f"Request {sample['request_index']}: {sample['latency_seconds']:.3f} s")
+            except (HTTPError, URLError, TimeoutError, OSError, ValueError) as exc:
+                errors.append({'request_index': futures[future], 'error': str(exc)})
+    record['measurement_wall_seconds'] = time.perf_counter() - started
+    record['samples'].sort(key=lambda sample: sample['request_index'])
+    if errors:
+        record['request_errors'] = errors
+        raise ValueError(f'{len(errors)} measured request(s) failed; see request_errors')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--requests', type=int, default=5)
+    parser.add_argument('--concurrency', type=int, default=1,
+                        help='Maximum active HTTP requests (1–4); warmups stay sequential')
     parser.add_argument('--warmups', type=int, default=1)
     parser.add_argument('--max-new-tokens', type=int, default=32)
     parser.add_argument('--prompt', default='Low latency is important because')
@@ -101,6 +134,8 @@ def main():
     args = parser.parse_args()
     if not 1 <= args.requests <= 100 or not 0 <= args.warmups <= 10:
         parser.error('Use 1–100 requests and 0–10 warmups')
+    if not 1 <= args.concurrency <= min(4, args.requests):
+        parser.error('Concurrency must be 1–4 and no greater than requests')
     if not 1 <= args.max_new_tokens <= 128 or not args.prompt.strip():
         parser.error('Use 1–128 new tokens and a nonempty prompt')
 
@@ -114,11 +149,11 @@ def main():
                'sampling_param_seed': 0,
                'sampling_param_return_perf_metrics': True}
     record = {
-        'schema_version': 5, 'started_at_utc': stamp.isoformat(),
+        'schema_version': 6, 'started_at_utc': stamp.isoformat(),
         'telemetry_settings': {'enabled': args.gpu_telemetry,
                                'interval_seconds': 0.5 if args.gpu_telemetry else None},
         'status': 'incomplete', 'endpoint': 'http://127.0.0.1:8000',
-        'workload': 'sequential_repeated_prompt', 'concurrency': 1,
+        'workload': 'bounded_workers_repeated_prompt', 'concurrency': args.concurrency,
         'request_payload': payload, 'warmup_count': args.warmups,
         'requested_measurements': args.requests, 'samples': [],
         'measurement': 'HTTP request start through complete response body receipt',
@@ -138,27 +173,19 @@ def main():
             record['runtime_snapshot'] = runtime_snapshot.capture(
                 record['model_configuration'].get('sha256'))
         print('Run metadata captured (outside request timers)')
-        for index in range(args.warmups + args.requests):
-            if sampler is not None and index == args.warmups:
-                sampler.start()
-            request_started_at = datetime.now(timezone.utc).isoformat()
-            elapsed, response = request('/v2/models/tensorrt_llm/generate', payload)
-            if not isinstance(response, dict) or not response.get('text_output'):
-                raise ValueError('Response does not contain nonempty text_output')
-            if index < args.warmups:
-                print(f'Warmup {index + 1} complete (excluded)')
-                continue
-            sample = {'latency_seconds': elapsed, 'response': response,
-                      'request_started_at_utc': request_started_at}
-            sample['server_ttft_seconds'] = server_ttft(response)
-            record['samples'].append(sample)
-            print(f'Request {index - args.warmups + 1}: {elapsed:.3f} s')
+        for index in range(args.warmups):
+            generate_sample(payload, index)
+            print(f'Warmup {index + 1} complete (excluded)')
+        if sampler is not None:
+            sampler.start()
+        measure(record, payload, args.requests, args.concurrency)
         if sampler is not None:
             record['gpu_telemetry'] = sampler.stop()
         if args.capture_runtime:
             record['runtime_verified_at_utc'] = runtime_snapshot.verify(record['runtime_snapshot'])
         values = [sample['latency_seconds'] for sample in record['samples']]
         record['summary'] = {'count': len(values),
+                             'requests_per_second': len(values) / record['measurement_wall_seconds'],
                              'mean_seconds': statistics.mean(values),
                              'median_seconds': statistics.median(values),
                              'min_seconds': min(values), 'max_seconds': max(values)}
@@ -173,6 +200,7 @@ def main():
             print('Server TTFT unavailable: no valid timestamp pairs returned')
         record['status'] = 'complete'
         print(f'Median HTTP completion latency: {statistics.median(values):.3f} s')
+        print(f"Completed requests/second: {record['summary']['requests_per_second']:.2f}")
     except (HTTPError, URLError, TimeoutError, OSError, ValueError, subprocess.SubprocessError) as exc:
         record['status'] = 'failed'
         record['error'] = str(exc)
