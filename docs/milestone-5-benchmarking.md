@@ -58,6 +58,92 @@ refusal as a failed run before the successful measurement above.
 
 ## Remaining work
 
+### Bounded concurrency (two live pairs verified)
+
+September 12 records `triton-20260912T180917.437610Z.json` and
+`triton-20260912T180957.295491Z.json` completed 20 requests each after one
+excluded warmup, with telemetry enabled. Recorded comparison fields differed
+only in concurrency, and both runtime snapshot checks passed on the same container.
+
+| Metric | Concurrency 1 | Concurrency 2 |
+| --- | ---: | ---: |
+| Median HTTP completion | 212.67 ms | 220.96 ms |
+| Median server TTFT | 19.00 ms | 34.22 ms |
+| Completed requests/second | 4.68 | 8.55 |
+| Measured batch wall time | 4.277 s | 2.341 s |
+| GPU polling samples | 9 | 5 |
+
+Observed request throughput increased approximately 82.7%, with median HTTP
+latency increasing 3.9%. The first two concurrent requests took approximately
+348 and 352 ms; they remain included. Fewer telemetry samples reflect the
+shorter batch at the same polling interval. GPU clock and temperature samples
+differed between runs, so this single pair does not isolate a causal effect or
+establish repeatability. Actual generated token counts remain unmeasured.
+The reverse-order repeat below checks whether the direction persists.
+
+The reverse-order repeat ran concurrency 2 first in
+`triton-20260912T181122.735706Z.json`, then concurrency 1 in
+`triton-20260912T181136.738441Z.json`. Both completed 20 measurements and had
+valid recorded runtime evidence; the comparator again found only concurrency
+different among its checked fields, with no missing comparison fields.
+
+| Repeat metric | Concurrency 1 | Concurrency 2 |
+| --- | ---: | ---: |
+| Median HTTP completion | 195.79 ms | 221.35 ms |
+| Median server TTFT | 17.91 ms | 27.22 ms |
+| Completed requests/second | 5.02 | 8.74 |
+| GPU polling samples | 8 | 5 |
+
+The repeat observed 74.3% higher request throughput and 13.1% higher median
+HTTP latency with concurrency 2. Across these two short pairs, the direction
+persisted but the magnitude varied: 74–83% higher request throughput, with
+4–13% higher median completion latency. These are descriptive pairwise ranges,
+not confidence intervals or a production capacity estimate. All measured
+requests, including slower ones, remain included. No token-throughput or
+cross-backend speedup claim is supported by this experiment.
+
+Schema 6 adds `--concurrency` (1–4, default 1). A fixed worker pool sends the
+requested number of repeated-prompt requests, starting the next queued request
+when a worker becomes free. Warmups remain sequential and excluded. This is
+a bounded client workload, not an arrival-rate or production load simulation.
+Client queue wait before a worker starts is excluded from request latency.
+
+`measurement_wall_seconds` spans worker setup through completion of the measured
+batch, including dispatch and reporting overhead. Completed requests divided by
+that interval gives request throughput, not token throughput. Failed requests
+mark the run failed; submitted work drains and successful samples are preserved.
+Concurrency does not imply server-side batching or parallel GPU execution.
+
+Collect fresh runs with identical options except concurrency, first 1 then 2:
+
+```powershell
+wsl -d Ubuntu-24.04 -- bash /mnt/m/Projects/TurboServe/scripts/benchmark-with-runtime-wsl.sh --gpu-telemetry --requests 20 --concurrency 1
+wsl -d Ubuntu-24.04 -- bash /mnt/m/Projects/TurboServe/scripts/benchmark-with-runtime-wsl.sh --gpu-telemetry --requests 20 --concurrency 2
+```
+
+The comparator intentionally flags the concurrency difference. Treat this as
+a concurrency experiment, not a same-workload optimization claim. Older schema
+5 records also differ in client implementation; collect a fresh baseline.
+
+### Offline run report
+
+`scripts/report_run.py` turns a complete saved JSON run into a readable Markdown
+report. It recalculates HTTP statistics from individual requests, reports the
+valid server TTFT sample count, checks recorded runtime evidence, and summarizes
+each GPU separately. Missing or invalid GPU values remain unavailable.
+Failed runs and inconsistent request counts are rejected.
+
+From PowerShell (no running server required):
+
+```powershell
+wsl -d Ubuntu-24.04 -- python3 /mnt/m/Projects/TurboServe/scripts/report_run.py /mnt/m/Projects/TurboServe/results/triton-20260910T172924.994247Z.json
+```
+
+The report prints to the terminal. It does not modify the record or make new
+inference requests. The saved September 10 run reproduces 211.38 ms median HTTP
+completion and 19.16 ms median server TTFT, with nine GPU observations. These
+are descriptive measurements, not proof of a performance improvement.
+
 ### Optional GPU telemetry (live verified)
 
 Add `--gpu-telemetry` to the benchmark or its runtime-evidence wrapper to
